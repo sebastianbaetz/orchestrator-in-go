@@ -1,16 +1,18 @@
 package main
 
 import (
+	"fmt"
+	"os"
+	"time"
+
+	"cube/manager"
 	"cube/node"
 	"cube/task"
-	"fmt"
-	"time"
+	"cube/worker"
 
 	"github.com/golang-collections/collections/queue"
 	"github.com/google/uuid"
-
-	"cube/manager"
-	"cube/worker"
+	"github.com/moby/moby/client"
 )
 
 func main() {
@@ -30,8 +32,8 @@ func main() {
 		Task:      t,
 	}
 
-	fmt.Printf("task: %v\n", t)
-	fmt.Printf("task event: %v\n", te)
+	fmt.Printf(("task: %v\n"), t)
+	fmt.Printf(("task event: %v\n"), te)
 
 	w := worker.Worker{
 		Name:  "worker-1",
@@ -66,4 +68,52 @@ func main() {
 	}
 
 	fmt.Printf("node: %v\n", n)
+
+	fmt.Printf("create a test container\n")
+	dockerTask, createResult := createContainer()
+	if createResult.Error != nil {
+		fmt.Printf("%v", createResult.Error)
+		os.Exit(1)
+	}
+
+	time.Sleep(time.Second * 5)
+	fmt.Printf("stopping container %s\n", createResult.ContainerId)
+	_ = stopContainer(dockerTask, createResult.ContainerId)
+}
+
+func createContainer() (*task.Docker, *task.DockerResult) {
+	c := task.Config{
+		Name:  "test-container-1",
+		Image: "postgres:13",
+		Env: []string{
+			"POSTGRES_USER=cube",
+			"POSTGRES_PASSWORD=secret",
+		},
+	}
+
+	dc, _ := client.NewClientWithOpts(client.FromEnv)
+	d := task.Docker{
+		Client: dc,
+		Config: c,
+	}
+
+	result := d.Run()
+	if result.Error != nil {
+		fmt.Printf("%v\n", result.Error)
+		return nil, nil
+	}
+
+	fmt.Printf("Container %s is running with config %v\n", result.ContainerId, c)
+	return &d, &result
+}
+
+func stopContainer(d *task.Docker, id string) *task.DockerResult {
+	result := d.Stop(id)
+	if result.Error != nil {
+		fmt.Printf("%v\n", result.Error)
+		return nil
+	}
+
+	fmt.Printf("Container %s has been stopped and removed\n", result.ContainerId)
+	return &result
 }
